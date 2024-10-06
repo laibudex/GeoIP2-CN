@@ -68,6 +68,7 @@ jobs:
         cp -f dist/* .
 
         git add Country.mmdb
+        git add ipip3mmdb
         git add CN-ip-cidr.txt
         git add clash-rule-provider.yml
         git add clash-ruleset.list
