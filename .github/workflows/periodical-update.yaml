@@ -68,12 +68,14 @@ jobs:
         cp -f dist/* .
 
         git add Country.mmdb
+        git add dist/ipip3mmdb
         git add CN-ip-cidr.txt
         git add clash-rule-provider.yml
         git add clash-ruleset.list
         git add surge-ruleset.list
         git add chnroute.ipset
         git commit -am "Updated at $(date)"
+        git push origin release
 
         git branch -D release
         git branch -m release
