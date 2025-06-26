@@ -7,76 +7,61 @@ import (
 	"github.com/maxmind/mmdbwriter/mmdbtype"
 	log "github.com/sirupsen/logrus"
 	"os"
+	"strings"
 )
-		//"country": mmdbtype.Map{
-		//"continent": mmdbtype.Map{
-		//"code": mmdbtype.String("AS"),
-		//"geoname_id": mmdbtype.Uint32(6255147),
-		//"names":mmdbtype.Map{"de":mmdbtype.String("Asien"),
-		//"en":mmdbtype.String("Asia"),
-		//"es":mmdbtype.String("Asia"),
-		//"fr":mmdbtype.String("Asie"),
-		//"ja":mmdbtype.String("アジア"),
-		//"pt-BR":mmdbtype.String("Ásia"),
-		//"ru":mmdbtype.String("Азия"),
-		//"zh-CN":mmdbtype.String("亚洲")},
-		//},
-		//"country": mmdbtype.Map{
-		//"geoname_id":mmdbtype.Uint32(1814991),
-		//"is_in_european_union":mmdbtype.Bool(false),
-		//"iso_code":mmdbtype.String("CN"),
-		//"names":mmdbtype.Map{
-		//"de":mmdbtype.String("China"),
-		//"en":mmdbtype.String("China"),
-		//"es":mmdbtype.String("China"),
-		//"fr":mmdbtype.String("Chine"),
-		//"ja":mmdbtype.String("中国"),
-		//"pt-BR":mmdbtype.String("China"),
-		//"ru":mmdbtype.String("Китай"),
-		//"zh-CN":mmdbtype.String("中国"),
-		//},
-		//},
-		//"registered_country": mmdbtype.Map{
-		//"geoname_id":mmdbtype.Uint32(1814991),
-		//"is_in_european_union":mmdbtype.Bool(false),
-		//"iso_code":mmdbtype.String("CN"),
-		//"names":mmdbtype.Map{
-		//"de":mmdbtype.String("China"),
-		//"en":mmdbtype.String("China"),
-		//"es":mmdbtype.String("China"),
-		//"fr":mmdbtype.String("Chine"),
-		//"ja":mmdbtype.String("中国"),
-		//"pt-BR":mmdbtype.String("China"),
-		//"ru":mmdbtype.String("Китай"),
-		//"zh-CN":mmdbtype.String("中国"),
-		//},
-		//},
-		//"traits": mmdbtype.Map{
-		//"is_anonymous_proxy": mmdbtype.Bool(false),
-		//"is_satellite_provider":mmdbtype.Bool(false),
-		//},
-		//},
 
 var (
-	srcFile string
-	dstFile string
+	srcFile      string
+	dstFile      string
 	databaseType string
+
+	// 中国记录
 	cnRecord = mmdbtype.Map{
 		"country": mmdbtype.Map{
 			"geoname_id":           mmdbtype.Uint32(1814991),
+			"is_in_european_union": mmdbtype.Bool(false),
 			"iso_code":             mmdbtype.String("CN"),
+			"names": mmdbtype.Map{
+				"de":    mmdbtype.String("China"),
+				"en":    mmdbtype.String("China"),
+				"es":    mmdbtype.String("China"),
+				"fr":    mmdbtype.String("Chine"),
+				"ja":    mmdbtype.String("中国"),
+				"pt-BR": mmdbtype.String("China"),
+				"ru":    mmdbtype.String("Китай"),
+				"zh-CN": mmdbtype.String("中国"),
+			},
+		},
+	}
+
+	// 中非共和国（CF）记录
+	cfRecord = mmdbtype.Map{
+		"country": mmdbtype.Map{
+			"geoname_id":           mmdbtype.Uint32(1814989),
+			"is_in_european_union": mmdbtype.Bool(false),
+			"iso_code":             mmdbtype.String("CF"),
+			"names": mmdbtype.Map{
+				"de":    mmdbtype.String("Centralafrikanische Republik"),
+				"en":    mmdbtype.String("Central African Republic"),
+				"es":    mmdbtype.String("República Centroafricana"),
+				"fr":    mmdbtype.String("République centrafricaine"),
+				"ja":    mmdbtype.String("中央アフリカ共和国"),
+				"pt-BR": mmdbtype.String("República Centro-Africana"),
+				"ru":    mmdbtype.String("Центральноафриканская Республика"),
+				"zh-CN": mmdbtype.String("中非共和国"),
+			},
 		},
 	}
 )
 
-func init()  {
-	flag.StringVar(&srcFile, "s", "ipip_cn.txt", "specify source ip list file")
+func init() {
+	flag.StringVar(&srcFile, "s", "ip_list.txt", "specify source IP list file (supports [CN] / [CF] sections)")
 	flag.StringVar(&dstFile, "d", "Country.mmdb", "specify destination mmdb file")
-	flag.StringVar(&databaseType,"t", "GeoIP2-Country", "specify MaxMind database type")
+	flag.StringVar(&databaseType, "t", "GeoIP2-Country", "specify MaxMind database type")
 	flag.Parse()
 }
 
-func main()  {
+func main() {
 	writer, err := mmdbwriter.New(
 		mmdbwriter.Options{
 			DatabaseType: databaseType,
@@ -84,39 +69,56 @@ func main()  {
 		},
 	)
 	if err != nil {
-		log.Fatalf("fail to new writer %v\n", err)
+		log.Fatalf("failed to create writer: %v", err)
 	}
 
-	var ipTxtList []string
 	fh, err := os.Open(srcFile)
 	if err != nil {
-		log.Fatalf("fail to open %s\n", err)
+		log.Fatalf("failed to open %s: %v", srcFile, err)
 	}
+	defer fh.Close()
+
 	scanner := bufio.NewScanner(fh)
-	scanner.Split(bufio.ScanLines)
+	currentRecord := cnRecord // 默认使用 CN
 
 	for scanner.Scan() {
-		ipTxtList = append(ipTxtList, scanner.Text())
-	}
-
-	ipList := parseCIDRs(ipTxtList)
-	for _, ip := range ipList {
-		err = writer.Insert(ip, cnRecord)
-		if err != nil {
-			log.Fatalf("fail to insert to writer %v\n", err)
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
 		}
+
+		// 区段头，例如 [CN] 或 [CF]
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			sec := strings.ToUpper(line[1 : len(line)-1])
+			switch sec {
+			case "CN":
+				currentRecord = cnRecord
+			case "CF":
+				currentRecord = cfRecord
+			default:
+				log.Warnf("unknown section %s, skip", sec)
+			}
+			continue
+		}
+
+		// 其余行，视为 CIDR，直接插入
+		if err := writer.Insert(line, currentRecord); err != nil {
+			log.Fatalf("failed to insert %s: %v", line, err)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("error reading %s: %v", srcFile, err)
 	}
 
 	outFh, err := os.Create(dstFile)
 	if err != nil {
-		log.Fatalf("fail to create output file %v\n", err)
+		log.Fatalf("failed to create output file %v", err)
+	}
+	defer outFh.Close()
+
+	if _, err := writer.WriteTo(outFh); err != nil {
+		log.Fatalf("failed to write to %s: %v", dstFile, err)
 	}
 
-	_, err = writer.WriteTo(outFh)
-	if err != nil {
-		log.Fatalf("fail to write to file %v\n", err)
-	}
-
+	log.Infof("successfully wrote mmdb to %s", dstFile)
 }
-
-
