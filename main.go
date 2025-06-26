@@ -6,6 +6,7 @@ import (
 	"github.com/maxmind/mmdbwriter"
 	"github.com/maxmind/mmdbwriter/mmdbtype"
 	log "github.com/sirupsen/logrus"
+	"net"
 	"os"
 	"strings"
 )
@@ -101,8 +102,12 @@ func main() {
 			continue
 		}
 
-		// 其余行，视为 CIDR，直接插入
-		if err := writer.Insert(line, currentRecord); err != nil {
+		// 其余行，视为 CIDR，解析并插入
+		_, network, err := net.ParseCIDR(line)
+		if err != nil {
+			log.Fatalf("invalid CIDR %s: %v", line, err)
+		}
+		if err := writer.Insert(network, currentRecord); err != nil {
 			log.Fatalf("failed to insert %s: %v", line, err)
 		}
 	}
